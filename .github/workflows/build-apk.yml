@@ -1,0 +1,77 @@
+name: Build Murshid APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git zip unzip autoconf automake libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 \
+            cmake libffi-dev libssl-dev libltdl-dev build-essential ccache
+
+      - name: Install Buildozer
+        run: |
+          python -m pip install --upgrade pip wheel
+          pip install "buildozer==1.5.0" "cython==0.29.36"
+
+      - name: Verify project files
+        run: |
+          for f in buildozer.spec main.py engine.py ui.py tabs_a.py tabs_b.py fonts/DejaVuSansCondensed.ttf fonts/DejaVuSansCondensed-Bold.ttf; do
+            test -f "$f" || { echo "ERROR: missing $f"; exit 1; }
+          done
+          echo "All project files found"
+
+      - name: Fetch modern Arabic font (optional)
+        run: |
+          pip install fonttools
+          python tools/get_font.py || echo "Using bundled font"
+          ls -la fonts
+
+      - name: Cache Buildozer downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            .buildozer
+          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-${{ runner.os }}-
+
+      - name: Build Android APK
+        run: buildozer -v android debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Murshid-APK
+          path: bin/*.apk
+          if-no-files-found: error
+          retention-days: 7
